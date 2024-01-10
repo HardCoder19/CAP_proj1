@@ -1,0 +1,293 @@
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.math.BigInteger;
+public class Vsim{
+    public static void main(String[] args) {
+        Map<String, String> category1 = new HashMap<>();
+        category1.put("00000", "beq");
+        category1.put("00001", "bne");
+        category1.put("00010", "blt");
+        category1.put("00011", "sw");
+
+        Map<String, String> category2 = new HashMap<>();
+        category2.put("00000", "add");
+        category2.put("00001", "sub");
+        category2.put("00010", "and");
+        category2.put("00011", "or");
+
+        Map<String, String> category3 = new HashMap<>();
+        category3.put("00000", "addi");
+        category3.put("00001", "andi");
+        category3.put("00010", "ori");
+        category3.put("00011", "sll");
+        category3.put("00100", "sra");
+        category3.put("00101", "lw");
+
+        Map<String, String> category4 = new HashMap<>();
+        category4.put("00000", "jal");
+        category4.put("11111", "break");
+
+        Map<Integer, String> instructions = new HashMap<>();
+        Map<Integer, Integer> values = new LinkedHashMap<>();
+
+        String[] normal = {"add"};
+        String[] imm = {"addi", "ori", "andi", "sll","sra"};
+        String[] cat1s = {"sw"};
+
+        boolean mark = false;
+        int count = 252;
+        int lastAddress = -1;
+        int firstImmAddress = -1;
+        int cycleCount = 0;
+        int curr = 256;
+        int[] registersX = new int[32];
+
+        try (BufferedReader fileReader = new BufferedReader(new FileReader(args[0]))) {
+            try (BufferedWriter outFile = new BufferedWriter(new FileWriter("disassembly.txt"))) {
+                String line;
+                while ((line = fileReader.readLine()) != null) {
+                    count += 4;
+                    line = line.trim();
+                    if (!mark) {
+                        String code = line.substring(line.length() - 2);
+                        String opcode = line.substring(line.length() - 7, line.length() - 2);
+                        if (code.equals("11")) {
+                            opcode = category4.get(opcode);
+                            if ("break".equals(opcode)) {
+                                mark = true;
+                                String instr = count + "\t" + opcode;
+                                outFile.write(line + "\t" + instr + "\n");
+                                instructions.put(count, opcode + "\t" + instr);
+                                lastAddress = count;
+                                firstImmAddress = count + 4;
+                            } else {
+                                String immediate = line.substring(0, 20);
+                                int rs1 = immediate.startsWith("1") ? Integer.parseInt(immediate, 2) - (1 << immediate.length()) : Integer.parseInt(immediate, 2);
+                                int rd = Integer.parseInt(line.substring(20, 25), 2);
+                                String instr = count + "\t" + opcode + " x" + rd + ", #" + rs1;
+                                outFile.write(line + "\t" + instr + "\n");
+                                instructions.put(count, opcode + "\t" + instr + "\t[" + rd + ", " + rs1 + "]");
+                            }
+                        } else if (code.equals("00")) {
+                            opcode = category1.get(opcode);
+                            int rd = Integer.parseInt(line.substring(12, 17), 2);
+                            int rs1 = Integer.parseInt(line.substring(7, 12), 2);
+                            String immediate = line.substring(0, 7) + line.substring(20, 25);
+                            int rs2 = immediate.startsWith("1") ? Integer.parseInt(immediate, 2) - (1 << immediate.length()) : Integer.parseInt(immediate, 2);
+                            if (contains(cat1s, opcode)) {
+                                String instr = count + "\t" + opcode + " x" + rd + ", " + rs2 + "(x" + rs1 + ")";
+                                outFile.write(line + "\t" + instr + "\n");
+                                instructions.put(count, opcode + "\t" + instr + "\t[" + rd + ", " + rs2 + ", " + rs1 + "]");
+                            } else {
+                                String instr = count + "\t" + opcode + " x" + rd + ", x" + rs1 + ", #" + rs2;
+                                outFile.write(line + "\t" + instr + "\n");
+                                instructions.put(count, opcode + "\t" + instr + "\t[" + rd + ", x" + rs1 + ", #" + rs2 + "]");
+                            }
+                        } else if (code.equals("01")) {
+                            opcode = category2.get(opcode);
+                            int rd = Integer.parseInt(line.substring(line.length() - 12, line.length() - 7), 2);
+                            int rs1 = Integer.parseInt(line.substring(line.length() - 20, line.length() - 15), 2);
+                            int rs2 = Integer.parseInt(line.substring(line.length() - 25, line.length() - 20), 2);
+                            String instr = count + "\t" + opcode + " x" + rd + ", x" + rs1 + ", x" + rs2;
+                            outFile.write(line + "\t" + instr + "\n");
+                            instructions.put(count, opcode + "\t" + instr + "\t[" + rd + ", x" + rs1 + ", x" + rs2 + "]");
+                        } else if (code.equals("10")) {
+                            opcode = category3.get(opcode);
+                            int rd = Integer.parseInt(line.substring(line.length() - 12, line.length() - 7), 2);
+                            int rs1 = Integer.parseInt(line.substring(line.length() - 20, line.length() - 15), 2);
+                            String immediate = line.substring(0, 12);
+                            int rs2 = immediate.startsWith("1") ? Integer.parseInt(immediate, 2) - (1 << immediate.length()) : Integer.parseInt(immediate, 2);
+                            if (contains(imm, opcode)) {
+                                String instr = count + "\t" + opcode + " x" + rd + ", x" + rs1 + ", #" + rs2;
+                                outFile.write(line + "\t" + instr + "\n");
+                                instructions.put(count, opcode + "\t" + instr + "\t[" + rd + ", x" + rs1 + ", #" + rs2 + "]");
+                            } else {
+                                String instr = count + "\t" + opcode + " x" + rd + ", " + rs2 + "(x" + rs1 + ")";
+                                outFile.write(line + "\t" + instr + "\n");
+                                instructions.put(count, opcode + "\t" + instr + "\t[" + rd + ", " + rs2 + ", x" + rs1 + "]");
+                            }
+                        }
+                    } else {
+                        BigInteger immi;
+
+                        if (line.startsWith("1")) {
+                            BigInteger binaryValue = new BigInteger(line, 2);
+                            BigInteger subtractValue = BigInteger.ONE.shiftLeft(32);
+                            immi =  binaryValue.subtract(subtractValue);;
+                            outFile.write(line + "\t" + count + "\t" + immi.intValue() + "\n");
+                        } else {
+                            immi = new BigInteger(line, 2);
+                            outFile.write(line + "\t" + count + "\t" + immi.intValue() + "\n");
+                        }
+
+                        values.put(count, immi.intValue());
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        try (BufferedWriter outFile = new BufferedWriter(new FileWriter("simulation.txt"))) {
+            while (curr < lastAddress) {
+                cycleCount++;
+                String instructionStr = instructions.get(curr);
+                String[] parts = instructionStr.split("\t");
+
+                String opcode = parts[0];
+                String writeStr = parts[1];
+                String[] registers = parts[2].split(", ");
+
+                if ("add".equals(opcode)) {
+                    curr += 4;
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))] + registersX[Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""))];
+                } else if ("sub".equals(opcode)) {
+                    curr += 4;
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))] - registersX[Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""))];
+                } else if ("and".equals(opcode)) {
+                    curr += 4;
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))] & registersX[Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""))];
+                } else if ("or".equals(opcode)) {
+                    curr += 4;
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))] | registersX[Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""))];
+                } else if ("addi".equals(opcode)) {
+                    curr += 4;
+                   // System.out.println(Integer.parseInt(registers[0].replaceAll("[^\\d- ]", "")));
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))] + Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""));
+                } else if ("andi".equals(opcode)) {
+                    curr += 4;
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))] & Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""));
+                } else if ("ori".equals(opcode)) {
+                    curr += 4;
+
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))] | Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""));
+                   
+                } else if ("beq".equals(opcode)) {
+                    if (registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] == registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))]) {
+                        curr += 2 * Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""));
+                    } else {
+                        curr += 4;
+                    }
+                } else if ("bne".equals(opcode)) {
+                    if (registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] != registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))]) {
+                        curr += 2 * Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""));
+                    } else {
+                        curr += 4;
+                    }
+                } else if ("blt".equals(opcode)) {
+                    if (registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] < registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))]) {
+                        curr += 2 * Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""));
+                    } else {
+                        curr += 4;
+                    }
+                } else if ("sll".equals(opcode)) {
+                    curr += 4;
+                    int val = registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] >= 0 ? registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))] : -registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))];
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = val << Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""));
+                } else if ("sra".equals(opcode)) {
+                    curr += 4;
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = registersX[Integer.parseInt(registers[1].replaceAll("[^\\d-]", ""))] >> Integer.parseInt(registers[2].replaceAll("[^\\d-]", ""));
+                } else if ("lw".equals(opcode)) {
+                    curr += 4;
+
+                    int addr = Integer.parseInt(registers[1].substring(0,3)) + registersX[Integer.parseInt(String.valueOf(registers[1].charAt(registers[1].length()-2)))];
+
+
+
+                 registersX[Integer.parseInt(String.valueOf(registers[0].charAt(registers[0].length()-1)))] = values.get(addr);
+
+                } else if ("jal".equals(opcode)) {
+                    registersX[Integer.parseInt(registers[0].replaceAll("[^\\d-]", ""))] = curr + 4;
+                    curr += 2 * Integer.parseInt(registers[1].substring(1));
+                } else if ("sw".equals(opcode)) {
+                    curr += 4;
+
+                    int addr = Integer.parseInt(registers[1].substring(0,3)) + registersX[Integer.parseInt(String.valueOf(registers[1].charAt(registers[1].length()-2)))];
+                    values.put(addr, registersX[Integer.parseInt(String.valueOf(registers[0].charAt(registers[0].length()-1)))]);
+                }
+                outFile.write("--------------------\nCycle " + cycleCount + ":\t" + writeStr + "\t" + parts[2] + "\n");
+                printRegisters(outFile, registersX);
+
+                printData(outFile, firstImmAddress, values, false);
+                if (curr == lastAddress) {
+                    String lastInstructionStr = instructions.get(lastAddress);
+                    String[] lastParts = lastInstructionStr.split("\t");
+                    cycleCount++;
+                    outFile.write("--------------------\nCycle " + cycleCount + ":\t" + lastParts[1] +"\t"+lastParts[2] +"\n");
+                    printRegisters(outFile, registersX);
+                    printData(outFile, firstImmAddress, values, true);
+                    curr = lastAddress;
+                    break;
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static boolean contains(String[] array, String value) {
+        for (String item : array) {
+            if (item.equals(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void printRegisters(BufferedWriter outFile, int[] allRegisters) throws IOException {
+        outFile.write("Registers\n");
+        for (int i = 0; i < 32; i += 8) {
+            outFile.write("x" + formatRegisterNumber(i) + ":");
+
+            for (int j = 0; j < 8; j++) {
+                outFile.write("\t" + allRegisters[i + j]);
+
+            }
+            outFile.write("\n");
+        }
+    }
+
+    private static String formatRegisterNumber(int number) {
+        return String.format("%02d", number);
+    }
+
+    private static void printData(BufferedWriter outFile, int firstImmediateAddress, Map<Integer, Integer> dataValues, boolean lastCycle) throws IOException {
+        outFile.write("Data\n");
+        int address = firstImmediateAddress;
+        int i = 0;
+
+
+        for (Map.Entry<Integer, Integer> entry : dataValues.entrySet()) {
+            int value = entry.getValue();
+            if(i==0){
+                outFile.write( address+":");
+            }
+
+
+            outFile.write( formatValue(value));
+            address += 4;
+            i++;
+            if (i == 8) {
+                outFile.write( "\n");
+
+                i = 0;
+            }
+        }
+        if (i != 0 || lastCycle) {
+            outFile.write("\n");
+        }
+    }
+
+    private static String formatValue(int value) {
+        return String.format("%11d", value);
+    }
+}
